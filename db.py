@@ -1,10 +1,14 @@
 from neo4j import GraphDatabase
-from utils import Space, Device
+from py2neo import Graph, Node, Relationship
+from snowflake import client as snowflake_client
+from utils import Space, Device, Action, Effect
 
 # 设置数据库连接参数
 uri = "Bolt://47.101.169.122:7687"
 username = "neo4j"
 password = "12345678"
+
+snowflake_client.setup()
 
 # 创建 Neo4j 驱动程序
 def create_driver(uri: str=uri, username: str=username, password: str=password) -> GraphDatabase:
@@ -17,6 +21,14 @@ def create_driver(uri: str=uri, username: str=username, password: str=password) 
     except Exception as e:
         print(f"Connection failed: {e}")
         return None
+
+# 创建py2neo连接
+def create_graph(uri: str=uri, username: str=username, password: str=password) -> Graph:
+ return Graph(uri, auth=(username, password))
+
+# 获取UUID
+def generate_uuid() -> str:
+    return snowflake_client.get_guid()
 
 # 读取图数据库中所有节点类型和关系类型
 def get_all_labels(driver) -> list:
@@ -97,6 +109,34 @@ def get_all_spaces(driver) -> list[Space]:
         
         return spaces
 
+# 保存定义的类到neo4j数据库
+def add_effect_node(graph:Graph, effect: Effect) -> None:
+    graph.create(Node("Effect", name=effect.name, uuid=generate_uuid()))
 
+def add_action_node(graph: Graph, action: Action) -> None:
+    action_node = Node("Action", name=action.name, uuid=generate_uuid())
+    for effect in action.effects:
+        effect_node = add_effect_node(effect)
+        graph.create(effect_node)
+        graph.create(Relationship(action_node, "HAS", effect_node))
+    graph.create(action_node)
 
+def add_device_node(graph: Graph, device: Device) -> None:
+    device_node = Node("Device", name=device.name, type=device.type, state=device.state, uuid=generate_uuid())
+    for action in device.actions:
+        action_node = add_action_node(action)
+        graph.create(action_node)
+        graph.create(Relationship(device_node, "CAN", action_node))
+    graph.create(device_node)
 
+def add_space_node(graph: Graph, space: Space) -> None:
+    space_node = Node("Space", name=space.name, uuid=generate_uuid())
+    for envstate in space.envstate:
+        envstate_node = Node("EnvState", name=envstate, uuid=generate_uuid())
+        graph.create(envstate_node)
+        graph.create(Relationship(space_node, "HAS", envstate_node))
+    for device in space.devices:
+        device_node = add_device_node(device)
+        graph.create(device_node)
+        graph.create(Relationship(device_node, "BELONG_TO", space_node))
+    graph.create(space_node)
