@@ -1,17 +1,16 @@
 from neo4j import GraphDatabase
 from py2neo import Graph, Node, Relationship
-from snowflake import client as snowflake_client
 from utils import Space, Device, Action, Effect
 
-# 设置数据库连接参数
-uri = "Bolt://47.101.169.122:7687"
+# 设置建模好的数据库连接参数
+finished_uri = "Bolt://47.101.169.122:7687"
+# 设置保存llm结果的数据库连接参数
+llm_uri = "Bolt://47.101.169.122:7098"
 username = "neo4j"
 password = "12345678"
 
-snowflake_client.setup()
-
 # 创建 Neo4j 驱动程序
-def create_driver(uri: str=uri, username: str=username, password: str=password) -> GraphDatabase:
+def create_driver(uri: str=finished_uri, username: str=username, password: str=password) -> GraphDatabase:
     driver = GraphDatabase.driver(uri, auth=(username, password))
     try:
         # 验证连接
@@ -23,12 +22,9 @@ def create_driver(uri: str=uri, username: str=username, password: str=password) 
         return None
 
 # 创建py2neo连接
-def create_graph(uri: str=uri, username: str=username, password: str=password) -> Graph:
+def create_graph(uri: str=llm_uri, username: str=username, password: str=password) -> Graph:
  return Graph(uri, auth=(username, password))
 
-# 获取UUID
-def generate_uuid() -> str:
-    return snowflake_client.get_guid()
 
 # 读取图数据库中所有节点类型和关系类型
 def get_all_labels(driver) -> list:
@@ -110,33 +106,45 @@ def get_all_spaces(driver) -> list[Space]:
         return spaces
 
 # 保存定义的类到neo4j数据库
-def add_effect_node(graph:Graph, effect: Effect) -> None:
-    graph.create(Node("Effect", name=effect.name, uuid=generate_uuid()))
+def add_effect_node(graph:Graph, effect: Effect) -> Node:
+    assert effect is not None, "Effect is None"
+    effect_node = Node("Effect", name=effect.name)
+    graph.create(effect_node)
+    return effect_node
 
-def add_action_node(graph: Graph, action: Action) -> None:
-    action_node = Node("Action", name=action.name, uuid=generate_uuid())
+def add_action_node(graph: Graph, action: Action) -> Node:
+    assert action is not None, "Action is None"
+    action_node = Node("Action", name=action.name)
     for effect in action.effects:
-        effect_node = add_effect_node(effect)
-        graph.create(effect_node)
+        effect_node = add_effect_node(graph, effect)
         graph.create(Relationship(action_node, "HAS", effect_node))
     graph.create(action_node)
+    return action_node
 
-def add_device_node(graph: Graph, device: Device) -> None:
-    device_node = Node("Device", name=device.name, type=device.type, state=device.state, uuid=generate_uuid())
+def add_device_node(graph: Graph, device: Device) -> Node:
+    assert device is not None, "Device is None"
+    device_node = Node("Device", name=device.name, type=device.type, state=device.state)
     for action in device.actions:
-        action_node = add_action_node(action)
-        graph.create(action_node)
+        action_node = add_action_node(graph, action)
         graph.create(Relationship(device_node, "CAN", action_node))
     graph.create(device_node)
+    return device_node
 
 def add_space_node(graph: Graph, space: Space) -> None:
-    space_node = Node("Space", name=space.name, uuid=generate_uuid())
+    assert space is not None, "Space is None"
+    space_node = Node("Space", name=space.name)
     for envstate in space.envstate:
-        envstate_node = Node("EnvState", name=envstate, uuid=generate_uuid())
+        envstate_node = Node("EnvState", name=envstate)
         graph.create(envstate_node)
         graph.create(Relationship(space_node, "HAS", envstate_node))
     for device in space.devices:
-        device_node = add_device_node(device)
-        graph.create(device_node)
+        device_node = add_device_node(graph, device)
         graph.create(Relationship(device_node, "BELONG_TO", space_node))
     graph.create(space_node)
+
+def delete_all_nodes(graph: Graph) -> None:
+    query = """
+    MATCH (n)
+    DETACH DELETE n
+    """
+    graph.run(query)

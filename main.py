@@ -1,11 +1,10 @@
 import os
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 
-from db import create_driver, get_all_spaces, add_space_node
+from db import create_driver, get_all_spaces, create_graph, add_space_node
 from utils import construct_effect_node
 
 if __name__ == "__main__":
@@ -45,8 +44,9 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error: {e}")
 
+    ind = 0
     for space in spaces:
-        for index, device in enumerate(space.devices):
+        for device in space.devices:
             temp_dict = {
                     "space": space.name,
                     "device": device.name,
@@ -57,19 +57,23 @@ if __name__ == "__main__":
             for action in device.actions:
                 temp_dict['action'] = action
                 formatted_prompt = prompt_template.format(**temp_dict)
-                print("---------------------------------\nFormatted Prompt:\n", formatted_prompt)
+                print("---------------------------------\nQuery "+str(ind)+"\nFormatted Prompt:\n", formatted_prompt)
                 result = chain.invoke(temp_dict)
                 print("\nLLM Response:\n",result)
 
                 # 提取LLM回答
                 effects = construct_effect_node(result)
                 for effect in effects:
-                    print(effect)
+                    print(effect.name)
                     # 将effect加到action上
                     action.add_effect(effect)
 
+    graph = create_graph()
+
     # 组成neo4j节点和关系
     for space in spaces:
-        add_space_node(space)
+        add_space_node(graph, space)
         print(f"Space {space.name} added to Neo4j")
-                
+
+    # TODO: 1. 在创建effect时提取reason作为node属性，方便debug
+    #       2. 尝试创建precondition
