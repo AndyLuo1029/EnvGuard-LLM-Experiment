@@ -108,7 +108,7 @@ def get_all_spaces(driver) -> list[Space]:
 # 保存定义的类到neo4j数据库
 def add_effect_node(graph:Graph, effect: Effect) -> Node:
     assert effect is not None, "Effect is None"
-    effect_node = Node("Effect", name=effect.name)
+    effect_node = Node("Effect", name=effect.name, reason=effect.reason)
     graph.create(effect_node)
     return effect_node
 
@@ -141,6 +141,42 @@ def add_space_node(graph: Graph, space: Space) -> None:
         device_node = add_device_node(graph, device)
         graph.create(Relationship(device_node, "BELONG_TO", space_node))
     graph.create(space_node)
+
+
+def add_effect_space_relation_single(graph: Graph, space_node: Node) -> None:
+    # 找到当前Space节点所有Device节点下所有Action节点下所有Effect节点
+    query = """
+    MATCH (space:Space)<-[:BELONG_TO]-(device:Device)-[:CAN]->(action:Action)-[:HAS]->(effect:Effect)
+    WHERE space.name = $space_name
+    RETURN effect
+    """
+    tx = graph.begin()  # 手动开始事务
+    try:
+        result = tx.run(query, space_name=space_node['name'])
+        for record in result:
+            effect_node = record['effect']
+            graph.create(Relationship(effect_node, "AFFECT", space_node))
+        tx.commit()  # 提交事务
+    except Exception as e:
+        tx.rollback()  # 回滚事务
+        raise e
+
+def add_effect_space_relation(graph: Graph) -> None:
+    # 找到所有space节点
+    query = """
+    MATCH (space:Space)
+    RETURN space
+    """
+    tx = graph.begin()  # 手动开始事务
+    try:
+        result = tx.run(query)
+        for record in result:
+            space_node = record['space']
+            add_effect_space_relation_single(graph, space_node)
+        tx.commit()  # 提交事务
+    except Exception as e:
+        tx.rollback()  # 回滚事务
+        raise e
 
 def delete_all_nodes(graph: Graph) -> None:
     query = """

@@ -1,6 +1,7 @@
 class Effect():
-    def __init__(self, name:str):
+    def __init__(self, name:str, reason:str):
         self.name = name
+        self.reason = reason
     
     def __eq__(self, other) -> bool:
         if isinstance(other, Effect):
@@ -55,17 +56,18 @@ class Space():
 
 def extract_result_from_llm(result:str) -> list[str]:
     import re
-    pattern = r'Effect \d+: (\w+)'
+    # 提取effect和reason
+    pattern = r"Effect \d+:\s*(\S+)\s*Reason \d+:\s*(.*)"
     matches = re.findall(pattern, result)
-    assert len(matches) > 0, "No effect extracted from the result"
+    assert len(matches) > 0, "Extract effect and reason failed"
     return matches
 
 def construct_effect_node(result:str) -> list[Effect]:
     # 解析得到的effect是多个
-    effects = extract_result_from_llm(result)
+    matches = extract_result_from_llm(result)
     effect_list = []
-    for effect in effects:
-        effect_list.append(Effect(effect))
+    for effect, reason in matches:
+        effect_list.append(Effect(effect, reason))
     return effect_list
 
 

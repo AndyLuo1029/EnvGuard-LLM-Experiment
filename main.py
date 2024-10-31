@@ -4,7 +4,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 
-from db import create_driver, get_all_spaces, create_graph, add_space_node
+from db import create_driver, get_all_spaces, create_graph, add_space_node, add_effect_space_relation
 from utils import construct_effect_node
 
 if __name__ == "__main__":
@@ -74,6 +74,9 @@ if __name__ == "__main__":
     for space in spaces:
         add_space_node(graph, space)
         print(f"Space {space.name} added to Neo4j")
+    
+    # 添加effect和space的关系，因为加上会很乱，所以先注释掉
+    # add_effect_space_relation(graph)
 
-    # TODO: 1. 在创建effect时提取reason作为node属性，方便debug
-    #       2. 尝试创建precondition
+
+    # TODO: 尝试创建precondition
