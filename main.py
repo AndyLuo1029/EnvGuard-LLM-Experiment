@@ -83,7 +83,7 @@ if __name__ == "__main__":
     
     # 2. 从log里找反例（逐条阅读event，根据event实时更新环境信息；对每个action，检查后续是否有对应的effect生效，没有生效的就是反例）
     log_path = "/Users/andyluo/Documents/实验室/EnvGuard-2024.github.io/DataSet/BuildingEnvironment"
-    save_path = "/Users/andyluo/Documents/实验室/EnvGuard-LLM-Experiment/counterexamples.jsonl"
+    save_path = "/Users/andyluo/Documents/实验室/EnvGuard-LLM-Experiment/data/counterexamples.jsonl"
     # counter_examples是一个大字典
     counter_examples = get_counterexamples(log_path, save_path, initial_states, graph)
 
@@ -130,7 +130,7 @@ IMPORTANT: Please use common sense to reason based on the actual information pro
     precondition_prompt_template = ChatPromptTemplate.from_messages([("system", precondition_system_prompt), ("user", precondition_user_prompt)])
     precondition_chain = precondition_prompt_template | model | parser
 
-    precondition_result_path = "/Users/andyluo/Documents/实验室/EnvGuard-LLM-Experiment/precondition.csv"
+    precondition_result_path = "/Users/andyluo/Documents/实验室/EnvGuard-LLM-Experiment/data/precondition.csv"
     for index, row in sampled_data.iterrows():
         ce = row.to_dict()
         formatted_prompt = precondition_prompt_template.format(**ce)
@@ -156,7 +156,7 @@ IMPORTANT: Please use common sense to reason based on the actual information pro
 
     precond_df = pd.read_csv(precondition_result_path)
     precond_df_unique = precond_df.drop_duplicates(subset=['device', 'action', 'effect', 'precondition'])
-    precond_df_unique.to_csv('precondition_unique.csv', index=False)
+    precond_df_unique.to_csv('/Users/andyluo/Documents/实验室/EnvGuard-LLM-Experiment/data/precondition_unique.csv', index=False)
     logger.info("去重后的数据已保存到 'precondition_unique.csv'")
 
     # 对graph读取所有space，找到里面每个device每个action的effect，从precondition里找到对应的precondition，然后添加到graph里作为节点
