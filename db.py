@@ -23,7 +23,7 @@ def create_driver(uri: str=finished_uri, username: str=username, password: str=p
 
 # 创建py2neo连接
 def create_graph(uri: str=llm_uri, username: str=username, password: str=password) -> Graph:
- return Graph(uri, auth=(username, password))
+    return Graph(uri, auth=(username, password))
 
 
 # 读取图数据库中所有节点类型和关系类型
@@ -177,6 +177,41 @@ def add_effect_space_relation(graph: Graph) -> None:
     except Exception as e:
         tx.rollback()  # 回滚事务
         raise e
+
+def add_space_georaphical_relation(graph: Graph) -> None:
+    # 0. 为space添加物理联系情况（谁和谁相连），会影响到后面的precondition创建
+    # Corridor - adjacent to -> Context
+    # Corridor <- adjacent to -> Tea Room
+    # Tea Room <- adjacent to -> MeetingRoomOne
+    # Corridor <- adjacent to -> MeetingRoomTwo
+    # Corridor <- adjacent to -> Lab
+    query = """
+    MATCH (space1:Space), (space2:Space)
+    WHERE space1.name = $space1_name AND space2.name = $space2_name
+    CREATE (space1)-[:ADJACENT_TO]->(space2)
+    """
+    tx = graph.begin()  # 手动开始事务
+    try:
+        tx.run(query, space1_name="Corridor", space2_name="Context")
+        tx.run(query, space1_name="Corridor", space2_name="TeaRoom")
+        tx.run(query, space1_name="TeaRoom", space2_name="Corridor")
+        tx.run(query, space1_name="TeaRoom", space2_name="MeetingRoomOne")
+        tx.run(query, space1_name="MeetingRoomOne", space2_name="TeaRoom")
+        tx.run(query, space1_name="Corridor", space2_name="MeetingRoomTwo")
+        tx.run(query, space1_name="MeetingRoomTwo", space2_name="Corridor")
+        tx.run(query, space1_name="Corridor", space2_name="Lab")
+        tx.run(query, space1_name="Lab", space2_name="Corridor")        
+        tx.commit()  # 提交事务
+    except Exception as e:
+        tx.rollback()  # 回滚事务
+        raise e
+
+def delete_all_space_georaphical_relation(graph: Graph) -> None:
+    query = """
+    MATCH (n)-[r:ADJACENT_TO]->()
+    DELETE r
+    """
+    graph.run(query)
 
 def delete_all_nodes(graph: Graph) -> None:
     query = """

@@ -54,13 +54,32 @@ class Space():
         return ','.join(self.envstate)
         
 
+import re
 def extract_result_from_llm(result:str) -> list[str]:
-    import re
     # 提取effect和reason
     pattern = r"Effect \d+:\s*(\S+)\s*Reason \d+:\s*(.*)"
     matches = re.findall(pattern, result)
     assert len(matches) > 0, "Extract effect and reason failed"
     return matches
+
+def extract_precondition(result: str) -> list[dict]:
+    res = []
+    result = result.replace("*", "")
+    # 匹配所有的(())和[[]]内容
+    double_parentheses_pattern = r'\(\((.*?)\)\)'
+    double_brackets_pattern = r'\[\[(.*?)\]\]'
+
+    # 提取内容
+    parentheses_content = re.findall(double_parentheses_pattern, result)
+    brackets_content = re.findall(double_brackets_pattern, result)
+
+    if len(parentheses_content) != len(brackets_content):
+        raise ValueError("The number of parentheses and brackets should be equal.")
+    for pm, bm in zip(parentheses_content, brackets_content):
+        answer = pm.strip()
+        reason = bm.strip()
+        res.append({"answer": answer, "reason": reason})
+    return res
 
 def construct_effect_node(result:str) -> list[Effect]:
     # 解析得到的effect是多个
@@ -69,6 +88,33 @@ def construct_effect_node(result:str) -> list[Effect]:
     for effect, reason in matches:
         effect_list.append(Effect(effect, reason))
     return effect_list
+
+def save_precondition(data:dict, save_path:str) -> None:
+    import csv
+    import os
+    print("in save_precondition")
+    file_exists = os.path.exists(save_path) and os.path.getsize(save_path) > 0
+    with open(save_path, 'a', newline='') as f:
+        writer = csv.writer(f)
+        # 如果文件不存在或为空，则写入表头
+        if not file_exists:
+            writer.writerow(['space', 'device', 'action', 'effect', 'precondition', 'reason'])
+        # 写入数据
+        writer.writerow([data['space'], data['device'], data['action'], data['effect'], data['precondition'], data['reason']])
+
+import logging
+
+def setup_logger(name, log_file, level=logging.INFO):
+    formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
+
+    handler = logging.FileHandler(log_file)        
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.addHandler(handler)
+
+    return logger
 
 
 if __name__ == "__main__":

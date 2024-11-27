@@ -1,0 +1,4 @@
+pandas
+langchain
+neo4j
+py2neo
