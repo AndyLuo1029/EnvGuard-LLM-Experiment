@@ -92,7 +92,6 @@ def construct_effect_node(result:str) -> list[Effect]:
 def save_precondition(data:dict, save_path:str) -> None:
     import csv
     import os
-    print("in save_precondition")
     file_exists = os.path.exists(save_path) and os.path.getsize(save_path) > 0
     with open(save_path, 'a', newline='') as f:
         writer = csv.writer(f)

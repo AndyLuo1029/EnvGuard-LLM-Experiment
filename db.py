@@ -1,6 +1,8 @@
 from neo4j import GraphDatabase
 from py2neo import Graph, Node, Relationship
 from utils import Space, Device, Action, Effect
+from pandas import DataFrame
+import re
 
 # 设置建模好的数据库连接参数
 finished_uri = "Bolt://47.101.169.122:7687"
@@ -219,3 +221,44 @@ def delete_all_nodes(graph: Graph) -> None:
     DETACH DELETE n
     """
     graph.run(query)
+
+def add_precondition_node(graph: Graph, df: DataFrame, logger) -> None:
+    query_spaces = """
+    MATCH (space:Space)
+    RETURN space
+    """
+
+    query_effects = """
+    MATCH (space:Space)<-[:BELONG_TO]-(device:Device)-[:CAN]->(action:Action)-[:HAS]->(effect:Effect)
+    WHERE space.name = $space_name
+    RETURN device, action, effect
+    """
+    
+    result_spaces = graph.run(query_spaces)
+    for record_space in result_spaces:
+        space_node = record_space['space']
+        result_effects = graph.run(query_effects, space_name=space_node['name'])
+        for record_effect in result_effects:
+            effect_node = record_effect['effect']
+            device_name = record_effect['device']['name']
+            device_name = re.sub(r'\d+$', '', device_name)
+            device, action, effect = device_name, record_effect['action']['name'], record_effect['effect']['name']
+            # 获取对应的所有 precondition
+            matching_preconditions = df[(df['device'] == device) & 
+                                        (df['action'] == action) & 
+                                        (df['effect'] == effect)]
+            if not matching_preconditions.empty:
+                logger.info(f"{device}, {action}, {effect}")
+                logger.info(matching_preconditions)
+                for _, row in matching_preconditions.iterrows():
+                    precondition, reason = row['precondition'], row['reason']
+                    precondition_node = Node("Precondition", name=precondition, reason=reason)
+                    graph.create(precondition_node)
+                    graph.create(Relationship(effect_node, "CONSTRAINED_BY", precondition_node))
+                    logger.info(f"Precondition {precondition} added to Neo4j in {space_node['name']}, {device}, {action}, {effect}")
+
+def delete_preconditions(graph: Graph) -> None:
+    query1 = """MATCH (effect)-[r:CONSTRAINED_BY]->(precondition) DELETE r"""
+    query2 = """MATCH (n:Precondition) DETACH DELETE n"""
+    graph.run(query1)
+    graph.run(query2)

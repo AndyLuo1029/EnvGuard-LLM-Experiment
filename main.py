@@ -1,17 +1,18 @@
 import os
 import json
+import pandas as pd
 
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-from db import create_driver, get_all_spaces, create_graph, add_space_node, add_space_georaphical_relation, add_effect_space_relation
+from db import create_driver, get_all_spaces, create_graph, add_space_node, add_space_georaphical_relation, add_precondition_node, add_effect_space_relation, delete_preconditions
 from utils import construct_effect_node, setup_logger, extract_precondition, save_precondition
 from log_analyze import get_counterexamples
 
 if __name__ == "__main__":
     logger = setup_logger("main", "log/main.log")
-    os.environ["OPENAI_API_KEY"] = 'sk-rSXdzHFvQ3Zl1kSnerB6MEBukCly9uPMUXaHqLIyTyoHfC6o'
+    os.environ["OPENAI_API_KEY"] = 'YOUR API KEY'
     model = ChatOpenAI(
         model="gpt-4o-mini",
         openai_api_base='https://api.aiproxy.io/v1'
@@ -85,6 +86,21 @@ if __name__ == "__main__":
     save_path = "/Users/andyluo/Documents/实验室/EnvGuard-LLM-Experiment/counterexamples.jsonl"
     # counter_examples是一个大字典
     counter_examples = get_counterexamples(log_path, save_path, initial_states, graph)
+
+    with open(save_path, 'r') as file:
+        data = [json.loads(line) for line in file]
+    df = pd.DataFrame(data)
+    
+    # 对Device, Action, Effect进行分组
+    grouped = df.groupby(['Device', 'Action', 'Effect'])
+    group_sizes = grouped.size()
+    total_groups = len(group_sizes)
+    logger.info("每个组的大小："+str(group_sizes))
+    logger.info(f"总共有 {total_groups} 个组。")
+
+    # 从每个组中随机选择3条记录
+    sampled_data = grouped.apply(lambda x: x.sample(n=min(3, len(x)), random_state=1)).reset_index(drop=True)
+    # logger.info(sampled_data.shape)
     
     # 3. 用反例创建precondition
     precondition_system_prompt = """You are a helpful assistant for controlling smart devices. Your task is to analyze the reasons for the absence of the expected device effect."""
@@ -115,27 +131,34 @@ IMPORTANT: Please use common sense to reason based on the actual information pro
     precondition_chain = precondition_prompt_template | model | parser
 
     precondition_result_path = "/Users/andyluo/Documents/实验室/EnvGuard-LLM-Experiment/precondition.csv"
-    with open(save_path, 'r') as f:
-        for index, line in enumerate(f):
-            ce = json.loads(line)
-            formatted_prompt = precondition_prompt_template.format(**ce)
-            logger.info("---------------------------------\nFormatted Prompt:\n%s", formatted_prompt)
-            result = precondition_chain.invoke(ce)
-            logger.info("\nLLM Response:\n%s", result)
-            try:
-                res = extract_precondition(result)
-            except Exception as e:
-                logger.error(f"Extract Error: {e}")
-            if res is not None:
-                for r in res:
-                    # 保存ce里的space，device，action，effect和res里的answer和reason
-                    data = {
-                        "space": ce.get("Space"),
-                        "device": ce.get("Device"),
-                        "action": ce.get("Action"),
-                        "effect": ce.get("Effect"),
-                        "precondition": r.get("answer"),
-                        "reason": r.get("reason")
-                    }
-                    save_precondition(data, precondition_result_path)
-    
+    for index, row in sampled_data.iterrows():
+        ce = row.to_dict()
+        formatted_prompt = precondition_prompt_template.format(**ce)
+        logger.info("---------------------------------\nFormatted Prompt:\n%s", formatted_prompt)
+        result = precondition_chain.invoke(ce)
+        logger.info("\nLLM Response:\n%s", result)
+        try:
+            res = extract_precondition(result)
+        except Exception as e:
+            logger.error(f"Extract Error: {e}")
+        if res is not None:
+            for r in res:
+                # 保存ce里的space，device，action，effect和res里的answer和reason
+                data = {
+                    "space": ce.get("Space"),
+                    "device": ce.get("Device"),
+                    "action": ce.get("Action"),
+                    "effect": ce.get("Effect"),
+                    "precondition": r.get("answer"),
+                    "reason": r.get("reason")
+                }
+                save_precondition(data, precondition_result_path)
+
+    precond_df = pd.read_csv(precondition_result_path)
+    precond_df_unique = precond_df.drop_duplicates(subset=['device', 'action', 'effect', 'precondition'])
+    precond_df_unique.to_csv('precondition_unique.csv', index=False)
+    logger.info("去重后的数据已保存到 'precondition_unique.csv'")
+
+    # 对graph读取所有space，找到里面每个device每个action的effect，从precondition里找到对应的precondition，然后添加到graph里作为节点
+    add_precondition_node(graph, precond_df_unique, logger)
+    logger.info("FINISHED")
